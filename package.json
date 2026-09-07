@@ -1,0 +1,16 @@
+{
+  "name": "auto-whatsapp-updates",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check-and-post": "node index.js",
+    "one-time-login": "node scripts/one-time-login.js"
+  },
+  "dependencies": {
+    "@browserbasehq/sdk": "^2.0.0",
+    "playwright-core": "^1.47.0",
+    "googleapis": "^140.0.0",
+    "nodemailer": "^6.9.14"
+  }
+}
