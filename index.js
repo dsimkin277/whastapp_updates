@@ -130,43 +130,20 @@ function nowInTimezone() {
   return new Date(`${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}`);
 }
 
-function parseHourRange(hoursStr, referenceDate) {
-  const [startStr, endStr] = hoursStr.split(" - ").map((s) => s.trim());
-  if (!startStr || !endStr) throw new Error(`Unrecognized Hours format: "${hoursStr}"`);
-  const toDate = (timeStr) => {
-    const m = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-    if (!m) throw new Error(`Unrecognized time format: "${timeStr}"`);
-    let [, h, min, meridiem] = m;
-    h = Number(h);
-    if (meridiem.toUpperCase() === "PM" && h !== 12) h += 12;
-    if (meridiem.toUpperCase() === "AM" && h === 12) h = 0;
-    const d = new Date(referenceDate);
-    d.setHours(h, Number(min), 0, 0);
-    return d;
-  };
-  return [toDate(startStr), toDate(endStr)];
-}
-
 async function checkScheduleAllowsPosting(now) {
   const auth = googleAuth(["https://www.googleapis.com/auth/spreadsheets.readonly"]);
   const sheets = google.sheets({ version: "v4", auth });
 
   const res = await withRetry("Read schedule sheet", () =>
-    sheets.spreadsheets.values.get({ spreadsheetId: process.env.SCHEDULE_SHEET_ID, range: "A1:D40" })
+    sheets.spreadsheets.values.get({ spreadsheetId: process.env.SCHEDULE_SHEET_ID, range: "Today!A1:B3" })
   );
 
   const rows = res.data.values || [];
-  const headerIdx = rows.findIndex((r) => r[0] === "Date" && r[2] === "Working?");
-  if (headerIdx === -1) {
-    throw new Error("Could not find the schedule table header (row with 'Date' / 'Working?') — sheet layout may have changed.");
-  }
+  const workingRow = rows.find((r) => (r[0] || "").trim() === "Working?");
+  const hoursRow = rows.find((r) => (r[0] || "").trim() === "Hours");
 
-  const todayStr = `${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")}/${now.getFullYear()}`;
-  const todayRow = rows.slice(headerIdx + 1).find((r) => r[0] === todayStr);
-  if (!todayRow) return { allowed: false, reason: `No schedule row found for ${todayStr}` };
-
-  const workingStatus = (todayRow[2] || "").trim().toLowerCase();
-  const hours = (todayRow[3] || "").trim();
+  const workingStatus = (workingRow?.[1] || "").trim().toLowerCase();
+  const hours = (hoursRow?.[1] || "").trim();
 
   if (workingStatus === "no") return { allowed: false, reason: "Today is a non-working day" };
   if (workingStatus === "yes") return { allowed: true, reason: "Full working day" };
@@ -174,11 +151,22 @@ async function checkScheduleAllowsPosting(now) {
     if (!hours || hours.toLowerCase() === "not working") {
       return { allowed: false, reason: "Marked Partially but no hours listed" };
     }
-    const [start, end] = parseHourRange(hours, now);
+    const m = hours.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!m) return { allowed: false, reason: `Unrecognized Hours format: "${hours}"` };
+    const to24 = (h, mer) => {
+      h = Number(h);
+      if (mer.toUpperCase() === "PM" && h !== 12) h += 12;
+      if (mer.toUpperCase() === "AM" && h === 12) h = 0;
+      return h;
+    };
+    const start = new Date(now);
+    start.setHours(to24(m[1], m[3]), Number(m[2]), 0, 0);
+    const end = new Date(now);
+    end.setHours(to24(m[4], m[6]), Number(m[5]), 0, 0);
     const within = now >= start && now <= end;
     return { allowed: within, reason: within ? "Within partial working window" : `Outside working window (${hours})` };
   }
-  return { allowed: false, reason: `Unrecognized Working? value: "${todayRow[2]}"` };
+  return { allowed: false, reason: `Unrecognized Working? value: "${workingRow?.[1]}"` };
 }
 
 async function listImages() {
