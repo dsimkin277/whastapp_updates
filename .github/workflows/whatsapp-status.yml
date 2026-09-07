@@ -1,0 +1,50 @@
+ name: Auto WhatsApp Status
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: whatsapp-status
+  cancel-in-progress: false
+
+jobs:
+  check-and-post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm install
+
+      - name: Run check-and-post
+        env:
+          BROWSERBASE_API_KEY: ${{ secrets.BROWSERBASE_API_KEY }}
+          BROWSERBASE_PROJECT_ID: ${{ secrets.BROWSERBASE_PROJECT_ID }}
+          BROWSERBASE_CONTEXT_ID: ${{ secrets.BROWSERBASE_CONTEXT_ID }}
+          GOOGLE_SERVICE_ACCOUNT_KEY_B64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY_B64 }}
+          DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+          SCHEDULE_SHEET_ID: ${{ secrets.SCHEDULE_SHEET_ID }}
+          ALERT_EMAIL_USER: ${{ secrets.ALERT_EMAIL_USER }}
+          ALERT_EMAIL_APP_PASSWORD: ${{ secrets.ALERT_EMAIL_APP_PASSWORD }}
+        run: npm run check-and-post
+
+      - name: Commit updated state
+        if: always()
+        run: |
+          if [ -n "$(git status --porcelain state.json)" ]; then
+            git config user.name "auto-whatsapp-bot"
+            git config user.email "actions@github.com"
+            git add state.json
+            git commit -m "Update posting state [skip ci]"
+            git pull --rebase origin main
+            git push
+          fi
