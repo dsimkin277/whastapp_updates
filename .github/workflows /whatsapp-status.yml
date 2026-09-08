@@ -1,4 +1,4 @@
-name: Auto WhatsApp Status
+ name: Auto WhatsApp Status
 
 on:
   schedule:
